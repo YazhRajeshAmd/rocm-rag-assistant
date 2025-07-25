@@ -1,0 +1,13 @@
+requests
+langchain
+langchain-community
+langchain-experimental
+langchain-huggingface
+beautifulsoup4
+gradio
+chromadb
+faiss-cpu
+sentence-transformers
+transformers
+torch
+ollama
