@@ -190,8 +190,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Related Projects
 
-- [Financial Stock Analysis](https://github.com/yourusername/fsi-stock-analysis)
-- [MRI Analysis Tool](https://github.com/yourusername/mri-analysis-tool)
+- [Financial Stock Analysis](https://github.com/YazhRajeshAmd/fsi-stock-analysis)
+- [MRI Analysis Tool](https://github.com/YazhRajeshAmd/mri-analysis-tool)
 
 ## 📚 Documentation Sources
 
