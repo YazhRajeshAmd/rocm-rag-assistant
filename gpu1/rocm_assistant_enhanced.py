@@ -509,14 +509,14 @@ def create_interface():
 
 if __name__ == "__main__":
     print("🚀 Starting ROCm Installation Assistant...")
-    print("🌐 Web interface will be available at: http://0.0.0.0:7863")
+    print("🌐 Web interface will be available at: http://0.0.0.0:7862")
     
     demo = create_interface()
     try:
         demo.launch(
             share=True,
             server_name="0.0.0.0", 
-            server_port=7863
+            server_port=7862
         )
     except KeyboardInterrupt:
         print("\n🛑 Shutting down gracefully...")
