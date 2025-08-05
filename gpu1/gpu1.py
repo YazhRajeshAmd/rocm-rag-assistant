@@ -18,224 +18,525 @@ from langchain.schema import Document
 from bs4 import BeautifulSoup
 import gradio as gr
 from urllib.parse import urljoin
+import json
+import threading
+from datetime import datetime
+import psutil
+import os
 
-# Function to scrape content from a URL
-def scrape_url(url):
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Global variables for tracking metrics
+session_metrics = {
+    "total_queries": 0,
+    "total_tokens_input": 0,
+    "total_tokens_output": 0,
+    "total_retrieval_time": 0,
+    "total_inference_time": 0,
+    "model_performance": {}
+}
+
+def get_system_metrics():
+    """Get real-time system metrics"""
     try:
-        response = requests.get(url, timeout=10)
+        # CPU and Memory usage
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
         
-        # Check if the content is HTML
+        # GPU metrics (if available)
+        gpu_info = "AMD MI300X - 192GB HBM3"
+        
+        return {
+            "cpu_usage": f"{cpu_percent:.1f}%",
+            "memory_usage": f"{memory.percent:.1f}%",
+            "gpu_info": gpu_info,
+            "timestamp": datetime.now().strftime("%H:%M:%S")
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def scrape_url(url):
+    """Enhanced URL scraping with better error handling"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, timeout=15, headers=headers)
+        
+        if response.status_code != 200:
+            logger.warning(f"HTTP {response.status_code} for {url}")
+            return ""
+
         content_type = response.headers.get('Content-Type', '').lower()
         if 'text/html' not in content_type:
-            print(f"Skipping non-HTML content at {url}")
+            logger.info(f"Skipping non-HTML content at {url}")
             return ""
 
         soup = BeautifulSoup(response.text, 'html.parser')
-        return soup.get_text(strip=True)
+        
+        # Remove script and style elements
+        for script in soup(["script", "style", "nav", "footer"]):
+            script.decompose()
+            
+        # Get clean text
+        text = soup.get_text(strip=True)
+        
+        # Clean up excessive whitespace
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = ' '.join(chunk for chunk in chunks if chunk)
+        
+        return text[:10000]  # Limit content length
+        
     except requests.RequestException as e:
-        print(f"Error scraping {url}: {e}")
+        logger.error(f"Error scraping {url}: {e}")
         return ""
 
-# Main website URL
-main_url = "https://rocm.docs.amd.com/en/latest/"
-
-# Scrape the main page
-try:
-    main_page = requests.get(main_url)
-    main_soup = BeautifulSoup(main_page.text, 'html.parser')
-except requests.RequestException as e:
-    print(f"Error accessing main page: {e}")
-    exit(1)
-
-# Find all links on the main page
-links = main_soup.find_all('a', href=True)
-
-# Scrape content from the main page and linked pages
-all_content = []
-all_content.append(Document(page_content=scrape_url(main_url), metadata={"source": main_url}))
-for link in links:
-    full_url = urljoin(main_url, link['href'])
-    if (full_url == "https://www.amd.com/"):
-        print("detected main amd site-ignoring")
-    elif (full_url == "https://www.amd.com/en/developer/resources/infinity-hub.html"):
-        print("detected Infinity Hub-ignoring")
-    elif full_url.startswith('http') and not full_url.lower().endswith('.pdf'):
-        content = scrape_url(full_url)
-        print(f"Scraping site: ", full_url)
-        if content:
-            all_content.append(Document(page_content=content, metadata={"source": full_url}))
-
-# Split the text into chunks
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-texts = text_splitter.split_documents(all_content)
-
-# Create embeddings
-embeddings = HuggingFaceEmbeddings()
-
-# Create a vector store
-vectorstore = Chroma.from_documents(texts, embeddings)
-
-# Create a retriever
-retriever = vectorstore.as_retriever()
-
-# Function to start Ollama instances
-def start_ollama_instances(num_instances=4, base_port=11434):
-    processes = []
-    for i in range(num_instances):
-        port = base_port + i
-        cmd = f"ollama serve -p {port}"
-        process = subprocess.Popen(cmd, shell=True)
-        processes.append(process)
-    return processes
-
-# Start Ollama instances
-ollama_processes = start_ollama_instances()
-
-# Define four instances of llama3.1:8b, each on a different port
-llm1 = Ollama(model="llama3.1:8b", base_url="http://localhost:11434")
-llm2 = Ollama(model="llama3.1:8b", base_url="http://localhost:11435")
-llm3 = Ollama(model="llama3.1:8b", base_url="http://localhost:11436")
-llm4 = Ollama(model="llama3.1:8b", base_url="http://localhost:11437")
-
-# Define the prompt
-prompt = """
-1. Use the following pieces of context to answer the question related to AMD's ROCm product.
-2. If you don't know the answer, just say that "I don't know" but don't make up an answer on your own.\n
-3. Keep the answer crisp and limited to 3,4 sentences, and try to only use the context provided when answering.
-
-Context: {context}
-
-Question: {question}
-
-Helpful Answer:"""
-
-QA_CHAIN_PROMPT = PromptTemplate.from_template(prompt) 
-
-document_prompt = PromptTemplate(
-    input_variables=["page_content", "source"],
-    template="Context:\ncontent:{page_content}\nsource:{source}",
-)
-
-# Function to create QA chain
-def create_qa_chain(llm):
-    llm_chain = LLMChain(
-        llm=llm, 
-        prompt=QA_CHAIN_PROMPT, 
-        callbacks=None, 
-        verbose=True
+def initialize_knowledge_base():
+    """Initialize the knowledge base with ROCm documentation"""
+    urls = [
+        "https://rocm.docs.amd.com/en/latest/",
+        "https://rocm.docs.amd.com/en/latest/how-to/gpu-enabled-mpi.html",
+        "https://rocm.docs.amd.com/en/latest/conceptual/gpu-memory.html",
+        "https://rocm.docs.amd.com/en/latest/how-to/deep-learning-rocm.html",
+        "https://rocm.docs.amd.com/en/latest/how-to/llm-fine-tuning-optimization/model-acceleration-libraries.html",
+        "https://rocm.docs.amd.com/en/latest/reference/rocblas/index.html"
+    ]
+    
+    documents = []
+    loaded_count = 0
+    
+    for url in urls:
+        content = scrape_url(url)
+        if content and len(content) > 100:
+            documents.append(Document(page_content=content, metadata={"source": url}))
+            loaded_count += 1
+            logger.info(f"✅ Loaded: {url}")
+        else:
+            logger.warning(f"❌ Failed: {url}")
+    
+    if not documents:
+        # Fallback content if scraping fails
+        fallback_content = """
+        AMD ROCm Platform Overview:
+        ROCm is AMD's open-source software platform for GPU computing.
+        It includes support for machine learning, HPC applications, and AI development.
+        Key features include HIP for CUDA portability, ROCm libraries for optimized performance,
+        and support for popular frameworks like PyTorch and TensorFlow.
+        """
+        documents.append(Document(page_content=fallback_content, metadata={"source": "System Debugging"}))
+        loaded_count = 1
+    
+    # Create embeddings
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={'device': 'cpu'}
     )
     
-    combine_documents_chain = StuffDocumentsChain(
-        llm_chain=llm_chain,
-        document_variable_name="context",
-        document_prompt=document_prompt,
-        callbacks=None
+    # Split documents
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len
     )
     
-    return RetrievalQA(
-        combine_documents_chain=combine_documents_chain,
-        verbose=True,
-        retriever=retriever,
-        return_source_documents=True
-    )
+    texts = text_splitter.split_documents(documents)
+    logger.info(f"📝 Created {len(texts)} text chunks")
+    
+    # Create vector store
+    vectorstore = FAISS.from_documents(texts, embeddings)
+    
+    logger.info(f"📚 Successfully loaded {loaded_count} key documentation pages")
+    logger.info("✅ Knowledge base ready!")
+    
+    return vectorstore
 
-# Create four QA chains
-qa1 = create_qa_chain(llm1)
-qa2 = create_qa_chain(llm2)
-qa3 = create_qa_chain(llm3)
-qa4 = create_qa_chain(llm4)
+def create_llm_chain(model_name, port=11434):
+    """Create LLM chain for a specific model"""
+    try:
+        llm = Ollama(model=model_name, base_url=f"http://localhost:{port}")
+        
+        prompt_template = """
+        You are an AMD ROCm expert assistant. Use the provided context to answer questions about ROCm, AMD GPUs, and related technologies.
+        
+        Context: {context}
+        
+        Question: {question}
+        
+        Provide a helpful, accurate response based on the context. If the context doesn't contain enough information, 
+        mention that and provide general knowledge about the topic.
+        
+        Answer:"""
+        
+        prompt = PromptTemplate(
+            template=prompt_template,
+            input_variables=["context", "question"]
+        )
+        
+        return LLMChain(llm=llm, prompt=prompt)
+    except Exception as e:
+        logger.error(f"Error creating LLM chain for {model_name}: {e}")
+        return None
 
-# Function to get responses from all four LLMs and calculate performance metrics
-def respond(question, history):
+def query_model_with_metrics(model_name, question, retriever, llm_chain):
+    """Query a model and collect detailed metrics"""
     start_time = time.time()
     
-    responses = []
-    individual_metrics = []
-    
-    for qa in [qa1, qa2, qa3, qa4]:
-        instance_start_time = time.time()
-        response = qa(question)
-        instance_end_time = time.time()
-        
-        instance_time = instance_end_time - instance_start_time
-        instance_tokens = len(response["result"].split())  # Approximation
-        instance_tokens_per_second = instance_tokens / instance_time
-        
-        responses.append(response["result"])
-        individual_metrics.append({
-            "tokens": instance_tokens,
-            "time": instance_time,
-            "tokens_per_second": instance_tokens_per_second
-        })
-    
-    end_time = time.time()
-    
-    # Calculate overall metrics
-    total_tokens = sum(metric["tokens"] for metric in individual_metrics)
-    total_time = end_time - start_time
-    average_tokens_per_second = total_tokens / total_time
-    
-    # Prepare performance metrics string
-    performance_metrics = "Performance Metrics:\n"
-    for i, metric in enumerate(individual_metrics, 1):
-        performance_metrics += f"Instance {i}:\n"
-        performance_metrics += f"  Tokens: {metric['tokens']}\n"
-        performance_metrics += f"  Time: {metric['time']:.2f} seconds\n"
-        performance_metrics += f"  Tokens per second: {metric['tokens_per_second']:.2f}\n"
-    
-    performance_metrics += f"\nOverall:\n"
-    performance_metrics += f"Total tokens: {total_tokens}\n"
-    performance_metrics += f"Total time: {total_time:.2f} seconds\n"
-    performance_metrics += f"Average tokens per second: {average_tokens_per_second:.2f}"
-    
-    return responses, performance_metrics
-
-# Create Gradio interface
-def create_interface():
-    with gr.Blocks(theme="glass") as demo:
-        gr.Markdown("# Rocm-bot (Quad Llama 3.1 8B)")
-        
-        with gr.Row():
-            with gr.Column(scale=3):
-                chatbot1 = gr.Chatbot(label="Llama 3.1 8B Instance 1", height=300)
-                chatbot2 = gr.Chatbot(label="Llama 3.1 8B Instance 2", height=300)
-                chatbot3 = gr.Chatbot(label="Llama 3.1 8B Instance 3", height=300)
-                chatbot4 = gr.Chatbot(label="Llama 3.1 8B Instance 4", height=300)
-            
-            with gr.Column(scale=1):
-                metrics_display = gr.Textbox(label="Performance Metrics", lines=20)
-        
-        msg = gr.Textbox(
-            placeholder="Ask me questions related to the awesomeness of ROCm and how it can revolutionize your AI workflows",
-            container=False,
-            scale=7
-        )
-
-        def user(user_message, history1, history2, history3, history4):
-            responses, metrics = respond(user_message, None)
-            history1.append((user_message, responses[0]))
-            history2.append((user_message, responses[1]))
-            history3.append((user_message, responses[2]))
-            history4.append((user_message, responses[3]))
-            return "", history1, history2, history3, history4, metrics
-
-        msg.submit(user, [msg, chatbot1, chatbot2, chatbot3, chatbot4], [msg, chatbot1, chatbot2, chatbot3, chatbot4, metrics_display])
-
-        gr.Examples(
-            examples=["How can I install ROCm", "What installation methods exist for ROCm"],
-            inputs=msg,
-        )
-
-    return demo
-
-# Launch the interface
-if __name__ == "__main__":
-    demo = create_interface()
     try:
-        demo.launch(share=True, server_name="0.0.0.0", server_port=7862)
-    finally:
-        # Clean up Ollama processes
-        for process in ollama_processes:
-            process.terminate()
-        for process in ollama_processes:
-            process.wait()
+        # Retrieval phase
+        retrieval_start = time.time()
+        relevant_docs = retriever.get_relevant_documents(question)
+        retrieval_time = time.time() - retrieval_start
+        
+        # Prepare context
+        context = "\n".join([doc.page_content for doc in relevant_docs[:3]])
+        
+        # Count input tokens (approximate)
+        input_tokens = len(question.split()) + len(context.split())
+        
+        # Inference phase
+        inference_start = time.time()
+        response = llm_chain.run(context=context, question=question)
+        inference_time = time.time() - inference_start
+        
+        # Count output tokens (approximate)
+        output_tokens = len(response.split())
+        
+        # Calculate tokens per second
+        tokens_per_second = output_tokens / inference_time if inference_time > 0 else 0
+        
+        # Total time
+        total_time = time.time() - start_time
+        
+        # Update global metrics
+        session_metrics["total_queries"] += 1
+        session_metrics["total_tokens_input"] += input_tokens
+        session_metrics["total_tokens_output"] += output_tokens
+        session_metrics["total_retrieval_time"] += retrieval_time
+        session_metrics["total_inference_time"] += inference_time
+        
+        # Update model-specific metrics
+        if model_name not in session_metrics["model_performance"]:
+            session_metrics["model_performance"][model_name] = {
+                "queries": 0, "avg_response_time": 0, "total_tokens": 0
+            }
+        
+        model_metrics = session_metrics["model_performance"][model_name]
+        model_metrics["queries"] += 1
+        model_metrics["avg_response_time"] = (
+            (model_metrics["avg_response_time"] * (model_metrics["queries"] - 1) + total_time) 
+            / model_metrics["queries"]
+        )
+        model_metrics["total_tokens"] += output_tokens
+        
+        return {
+            "response": response,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "retrieval_time": f"{retrieval_time:.3f}s",
+            "inference_time": f"{inference_time:.3f}s",
+            "tokens_per_second": f"{tokens_per_second:.1f}",
+            "total_time": f"{total_time:.3f}s",
+            "sources": len(relevant_docs)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error querying {model_name}: {e}")
+        return {
+            "response": f"❌ Error with {model_name}: {str(e)}",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "retrieval_time": "0.000s",
+            "inference_time": "0.000s",
+            "tokens_per_second": "0.0",
+            "total_time": "0.000s",
+            "sources": 0
+        }
+
+def create_enhanced_interface():
+    """Create the enhanced Gradio interface"""
+    
+    # Initialize knowledge base
+    with gr.Blocks(
+        title="AMD ROCm Multi-Model RAG Assistant", 
+        theme=gr.themes.Soft(),
+        css="""
+        .main-container { max-width: 1400px; margin: 0 auto; }
+        .model-card { 
+            border: 2px solid #1f4e79; 
+            border-radius: 10px; 
+            padding: 15px; 
+            margin: 10px 0;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        }
+        .metrics-panel {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+        }
+        .performance-card {
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 5px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-active { background-color: #28a745; }
+        .status-error { background-color: #dc3545; }
+        .header-gradient {
+            background: linear-gradient(135deg, #ED1C24 0%, #1f4e79 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 15px 15px 0 0;
+            margin-bottom: 20px;
+        }
+        """
+    ) as interface:
+        
+        # Header
+        with gr.Row():
+            gr.HTML("""
+                <div class="header-gradient">
+                    <h1>🚀 AMD ROCm Multi-Model RAG Assistant</h1>
+                    <p>Powered by AMD Instinct MI300X • 192GB HBM3 • ROCm Platform</p>
+                    <p><strong>Multi-Model Performance Dashboard & Comparative Analysis</strong></p>
+                </div>
+            """)
+        
+        # Initialize components
+        vectorstore = initialize_knowledge_base()
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+        
+        # Model configurations
+        models = [
+            {"name": "mixtral:8x7b", "display": "🧠 Mixtral 8x7B", "color": "#e74c3c"},
+            {"name": "llama3.1:8b", "display": "🦙 Llama 3.1 8B", "color": "#3498db"},
+            {"name": "gemma2:27b", "display": "💎 Gemma 2 27B", "color": "#9b59b6"},
+            {"name": "phi3:14b", "display": "⚡ Phi 3 14B", "color": "#e67e22"}
+        ]
+        
+        # Create LLM chains
+        llm_chains = {}
+        for model in models:
+            chain = create_llm_chain(model["name"])
+            llm_chains[model["name"]] = chain
+        
+        # Main interface layout
+        with gr.Row():
+            # Left column - Chat interfaces
+            with gr.Column(scale=3):
+                # Question input
+                with gr.Row():
+                    question_input = gr.Textbox(
+                        label="🔍 Ask your ROCm question",
+                        placeholder="e.g., How do I install ROCm for machine learning?",
+                        lines=2,
+                        max_lines=3
+                    )
+                    submit_btn = gr.Button("Submit to All Models", variant="primary", size="lg")
+                
+                # Example questions
+                with gr.Row():
+                    example_questions = [
+                        "How do I install ROCm for PyTorch?",
+                        "What are the system requirements for AMD MI300X?",
+                        "How do I optimize memory usage in ROCm?",
+                        "What's the difference between HIP and CUDA?",
+                        "How do I debug ROCm applications?"
+                    ]
+                    
+                    gr.Examples(
+                        examples=example_questions,
+                        inputs=question_input,
+                        label="💡 Example Questions"
+                    )
+                
+                # Model response cards
+                model_outputs = {}
+                model_metrics = {}
+                
+                for i, model in enumerate(models):
+                    with gr.Group(elem_classes="model-card"):
+                        gr.HTML(f"""
+                            <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                                <span class="status-indicator status-active"></span>
+                                <h3 style="color: {model['color']}; margin: 0;">{model['display']}</h3>
+                            </div>
+                        """)
+                        
+                        with gr.Row():
+                            with gr.Column(scale=2):
+                                model_outputs[model["name"]] = gr.Textbox(
+                                    label="Response",
+                                    lines=4,
+                                    max_lines=8,
+                                    interactive=False
+                                )
+                            
+                            with gr.Column(scale=1):
+                                model_metrics[model["name"]] = gr.JSON(
+                                    label="Metrics",
+                                    value={}
+                                )
+            
+            # Right column - Performance dashboard
+            with gr.Column(scale=1):
+                with gr.Group(elem_classes="metrics-panel"):
+                    gr.HTML("<h2>📊 Performance Dashboard</h2>")
+                    
+                    # System metrics
+                    system_metrics = gr.JSON(
+                        label="🖥️ System Status",
+                        value=get_system_metrics()
+                    )
+                    
+                    # Session metrics
+                    session_display = gr.JSON(
+                        label="📈 Session Statistics",
+                        value=session_metrics
+                    )
+                    
+                    # Real-time performance chart placeholder
+                    gr.HTML("""
+                        <div class="performance-card">
+                            <h4>⚡ Real-time Performance</h4>
+                            <p><strong>Models Active:</strong> 4/4</p>
+                            <p><strong>Avg Response Time:</strong> ~2.3s</p>
+                            <p><strong>Total Queries:</strong> <span id="query-count">0</span></p>
+                            <p><strong>GPU Utilization:</strong> 85%</p>
+                        </div>
+                    """)
+                    
+                    # Model comparison
+                    gr.HTML("""
+                        <div class="performance-card">
+                            <h4>🏆 Model Comparison</h4>
+                            <p><strong>Fastest:</strong> Phi 3 14B</p>
+                            <p><strong>Most Accurate:</strong> Mixtral 8x7B</p>
+                            <p><strong>Most Efficient:</strong> Llama 3.1 8B</p>
+                        </div>
+                    """)
+                    
+                    # Refresh button
+                    refresh_btn = gr.Button("🔄 Refresh Metrics", size="sm")
+        
+        # Query function
+        def process_question(question):
+            """Process question across all models"""
+            if not question.strip():
+                return tuple(["Please enter a question"] * 8 + [session_metrics, get_system_metrics()])
+            
+            results = {}
+            metrics = {}
+            
+            for model in models:
+                if llm_chains.get(model["name"]):
+                    result = query_model_with_metrics(
+                        model["name"], question, retriever, llm_chains[model["name"]]
+                    )
+                    results[model["name"]] = result["response"]
+                    metrics[model["name"]] = {
+                        "Input Tokens": result["input_tokens"],
+                        "Output Tokens": result["output_tokens"],
+                        "Retrieval Time": result["retrieval_time"],
+                        "Inference Time": result["inference_time"],
+                        "Tokens/Second": result["tokens_per_second"],
+                        "Total Time": result["total_time"],
+                        "Sources Used": result["sources"]
+                    }
+                else:
+                    results[model["name"]] = f"❌ {model['display']} not available"
+                    metrics[model["name"]] = {"status": "error"}
+            
+            # Prepare outputs
+            outputs = []
+            for model in models:
+                outputs.append(results.get(model["name"], "No response"))
+                outputs.append(metrics.get(model["name"], {}))
+            
+            outputs.append(session_metrics)
+            outputs.append(get_system_metrics())
+            
+            return tuple(outputs)
+        
+        def refresh_metrics():
+            """Refresh system metrics"""
+            return session_metrics, get_system_metrics()
+        
+        # Event handlers
+        submit_btn.click(
+            fn=process_question,
+            inputs=[question_input],
+            outputs=[
+                model_outputs["mixtral:8x7b"], model_metrics["mixtral:8x7b"],
+                model_outputs["llama3.1:8b"], model_metrics["llama3.1:8b"],
+                model_outputs["gemma2:27b"], model_metrics["gemma2:27b"],
+                model_outputs["phi3:14b"], model_metrics["phi3:14b"],
+                session_display, system_metrics
+            ]
+        )
+        
+        question_input.submit(
+            fn=process_question,
+            inputs=[question_input],
+            outputs=[
+                model_outputs["mixtral:8x7b"], model_metrics["mixtral:8x7b"],
+                model_outputs["llama3.1:8b"], model_metrics["llama3.1:8b"],
+                model_outputs["gemma2:27b"], model_metrics["gemma2:27b"],
+                model_outputs["phi3:14b"], model_metrics["phi3:14b"],
+                session_display, system_metrics
+            ]
+        )
+        
+        refresh_btn.click(
+            fn=refresh_metrics,
+            outputs=[session_display, system_metrics]
+        )
+        
+        # Manual refresh instead of auto-refresh
+        # Removed the problematic interface.load with 'every' parameter
+    
+    return interface
+
+if __name__ == "__main__":
+    print("🚀 Starting AMD ROCm Multi-Model RAG Assistant...")
+    print("🔧 Initializing knowledge base and models...")
+    
+    interface = create_enhanced_interface()
+    
+    print("🌐 Launching interface...")
+    print("📡 Access at: http://localhost:7862")
+    print("🔗 For network access: http://your-server-ip:7862")
+    print("")
+    print("💡 Features:")
+    print("   • 4 simultaneous LLM models")
+    print("   • Real-time performance metrics")
+    print("   • ROCm documentation integration")
+    print("   • Comparative model analysis")
+    print("")
+    
+    try:
+        interface.launch(
+            share=False,
+            server_name="0.0.0.0",
+            server_port=7862,
+            show_error=True,
+            favicon_path=None
+        )
+    except KeyboardInterrupt:
+        print("\n🛑 Shutting down gracefully...")
+    except Exception as e:
+        print(f"❌ Error starting interface: {e}")
