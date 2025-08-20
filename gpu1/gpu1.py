@@ -263,45 +263,122 @@ def create_enhanced_interface():
         title="AMD ROCm Multi-Model RAG Assistant", 
         theme=gr.themes.Soft(),
         css="""
-        .main-container { max-width: 1400px; margin: 0 auto; }
+        @import url('https://fonts.googleapis.com/css2?family=Arial:wght@400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Arial', Arial, sans-serif !important;
+        }
+        
+        /* Teal accent color - PMS 3115 C */
+        .primary {
+            background: linear-gradient(135deg, #00C2DE 0%, #008AA8 100%) !important;
+            border: none !important;
+        }
+        
+        .primary:hover {
+            background: linear-gradient(135deg, #008AA8 0%, #006A80 100%) !important;
+        }
+        
+        .main-container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            font-size: 16px;
+        }
+        
         .model-card { 
-            border: 2px solid #1f4e79; 
-            border-radius: 10px; 
-            padding: 15px; 
-            margin: 10px 0;
+            border: 2px solid #00C2DE; 
+            border-radius: 12px; 
+            padding: 20px; 
+            margin: 15px 0;
             background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            font-size: 16px;
         }
+        
         .metrics-panel {
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            background: linear-gradient(135deg, #00C2DE 0%, #008AA8 100%);
             color: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 10px 0;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 15px 0;
+            font-size: 16px;
         }
+        
         .performance-card {
             background: #ffffff;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 5px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 1px solid #00C2DE;
+            border-radius: 10px;
+            padding: 18px;
+            margin: 8px 0;
+            box-shadow: 0 4px 6px rgba(0, 194, 222, 0.1);
+            font-size: 16px;
         }
+        
         .status-indicator {
             display: inline-block;
-            width: 12px;
-            height: 12px;
+            width: 14px;
+            height: 14px;
             border-radius: 50%;
-            margin-right: 8px;
+            margin-right: 10px;
         }
-        .status-active { background-color: #28a745; }
+        
+        .status-active { background-color: #00C2DE; }
         .status-error { background-color: #dc3545; }
+        
         .header-gradient {
-            background: linear-gradient(135deg, #ED1C24 0%, #1f4e79 100%);
+            background: linear-gradient(135deg, #00C2DE 0%, #008AA8 100%);
             color: white;
-            padding: 30px;
+            padding: 35px;
             text-align: center;
             border-radius: 15px 15px 0 0;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
+            font-size: 18px;
+        }
+        
+        h1, h2, h3 {
+            color: #2c3e50 !important;
+            font-weight: 600 !important;
+        }
+        
+        .header-gradient h1 {
+            color: white !important;
+            font-size: 2.5em !important;
+            margin-bottom: 10px !important;
+        }
+        
+        .header-gradient p {
+            font-size: 1.2em !important;
+            margin: 5px 0 !important;
+        }
+        
+        /* Input focus states with Teal */
+        input:focus, textarea:focus, select:focus {
+            border-color: #00C2DE !important;
+            box-shadow: 0 0 0 2px rgba(0, 194, 222, 0.1) !important;
+        }
+        
+        /* Button styling */
+        .gr-button {
+            font-size: 16px !important;
+            padding: 12px 24px !important;
+            border-radius: 8px !important;
+        }
+        
+        /* Text areas and inputs */
+        textarea, input {
+            font-size: 16px !important;
+            line-height: 1.5 !important;
+        }
+        
+        /* JSON display */
+        .gr-json {
+            font-size: 14px !important;
+        }
+        
+        /* Section headers */
+        h3 {
+            border-left: 4px solid #00C2DE !important;
+            padding-left: 12px !important;
+            font-size: 1.3em !important;
         }
         """
     ) as interface:
@@ -309,10 +386,13 @@ def create_enhanced_interface():
         # Header
         with gr.Row():
             gr.HTML("""
-                <div class="header-gradient">
-                    <h1>🚀 AMD ROCm Multi-Model RAG Assistant</h1>
-                    <p>Powered by AMD Instinct MI300X • 192GB HBM3 • ROCm Platform</p>
-                    <p><strong>Multi-Model Performance Dashboard & Comparative Analysis</strong></p>
+                <div class="header-gradient" style="position: relative;">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/AMD_Logo.svg" alt="AMD Logo" style="position: absolute; top: 20px; right: 25px; height: 40px; width: auto;" />
+                    <div style="padding-right: 120px;">
+                        <h1>🚀 AMD ROCm Multi-Model RAG Assistant</h1>
+                        <p>Powered by AMD Instinct MI300X • 192GB HBM3 • ROCm Platform</p>
+                        <p><strong>Multi-Model Performance Dashboard & Comparative Analysis</strong></p>
+                    </div>
                 </div>
             """)
         
@@ -322,10 +402,10 @@ def create_enhanced_interface():
         
         # Model configurations
         models = [
-            {"name": "mixtral:8x7b", "display": "🧠 Mixtral 8x7B", "color": "#e74c3c"},
-            {"name": "llama3.1:8b", "display": "🦙 Llama 3.1 8B", "color": "#3498db"},
-            {"name": "gemma2:27b", "display": "💎 Gemma 2 27B", "color": "#9b59b6"},
-            {"name": "phi3:14b", "display": "⚡ Phi 3 14B", "color": "#e67e22"}
+            {"name": "mixtral:8x7b", "display": "🧠 Mixtral 8x7B", "color": "#00C2DE"},
+            {"name": "llama3.1:8b", "display": "🦙 Llama 3.1 8B", "color": "#008AA8"},
+            {"name": "gemma2:27b", "display": "💎 Gemma 2 27B", "color": "#006A80"},
+            {"name": "phi3:14b", "display": "⚡ Phi 3 14B", "color": "#00B8D4"}
         ]
         
         # Create LLM chains
