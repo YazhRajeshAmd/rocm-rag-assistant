@@ -49,7 +49,7 @@ A sophisticated Retrieval-Augmented Generation (RAG) system specifically designe
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/rocm-rag-assistant.git
+   git clone https://github.com/YazhRajeshAmd/rocm-rag-assistant.git
    cd rocm-rag-assistant
    ```
 
