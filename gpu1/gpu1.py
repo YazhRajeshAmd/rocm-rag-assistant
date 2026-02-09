@@ -14,7 +14,7 @@ from langchain.chains.llm import LLMChain
 from langchain.chains.combine_documents.stuff import StuffDocumentsChain
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
 from bs4 import BeautifulSoup
 import gradio as gr
@@ -103,29 +103,37 @@ def initialize_knowledge_base():
         "https://rocm.docs.amd.com/en/docs-7.1.0/",
         "https://rocm.docs.amd.com/en/docs-7.1.0/deploy/linux/quick_start.html",
         "https://rocm.docs.amd.com/en/docs-7.1.0/deploy/linux/installer/install.html",
+        "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/prerequisites.html",
+        "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/install-overview.html",
+        "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/post-install.html",
         "https://rocm.docs.amd.com/en/docs-7.1.0/deploy/linux/os-native/install.html",
         "https://rocm.docs.amd.com/en/docs-7.1.0/deploy/linux/prerequisites.html",
+        "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/3rd-party/pytorch-install.html",
 
         # Troubleshooting & how-to
         "https://rocm.docs.amd.com/en/docs-7.1.0/how-to/system-debugging.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/how-to/deep-learning-rocm.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/how-to/gpu-enabled-mpi.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/how-to/hip-debugging.html",
+        "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/3rd-party/pytorch-install.html",
+        "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/reference/install-faq.html",
+        "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/3rd-party/tensorflow-install.html",
+        "https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/index.html",
 
         # Programming & developer
         "https://rocm.docs.amd.com/en/docs-7.1.0/programming/hip.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/develop/tools.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/develop/performance.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/develop/libraries.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/conceptual/gpu-memory.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/conceptual/architecture.html",
+        "https://rocm.docs.amd.com/projects/amdsmi/en/latest/install/install.html",
+        "https://rocm.docs.amd.com/en/latest/how-to/rocm-for-hpc/index.html",
+        "https://instinct.docs.amd.com/projects/amdgpu-docs/en/latest/gpu-partitioning/mi300x/requirements.html",
+        "https://rocm.docs.amd.com/en/latest/reference/precision-support.html?model=composable-kernel",
+        "https://rocm.docs.amd.com/projects/hipSPARSE/en/docs-7.1.0/index.html",
+        "https://rocm.docs.amd.com/projects/HIP/en/latest/how-to/hip_runtime_api/memory_management.html",
 
         # Containers & framework integration
-        "https://rocm.docs.amd.com/en/docs-7.1.0/deploy/linux/containers/docker.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/frameworks/pytorch.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/frameworks/tensorflow.html",
+        "https://rocm.docs.amd.com/projects/HIP/en/latest/how-to/performance_guidelines.html",
+        "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/how-to/docker.html",
 
         # API references
+        "https://www.amd.com/en/products/software/rocm/whats-new.html",
+        "https://rocm.docs.amd.com/projects/hipTensor/en/latest/install/installation.html",
+        "https://rocm.docs.amd.com/projects/ROCR-Runtime/en/latest/install/installation.html#installation",
         "https://rocm.docs.amd.com/en/docs-7.1.0/reference/index.html",
         "https://rocm.docs.amd.com/en/docs-7.1.0/reference/libs.html",
         "https://rocm.docs.amd.com/en/docs-7.1.0/reference/runtime.html",
@@ -134,9 +142,10 @@ def initialize_knowledge_base():
         "https://rocm.docs.amd.com/en/docs-7.1.0/reference/math.html",
 
         # Release & compatibility
-        "https://rocm.docs.amd.com/en/docs-7.1.0/release.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/release_notes.html",
-        "https://rocm.docs.amd.com/en/docs-7.1.0/support_matrix.html"
+        "https://rocm.docs.amd.com/en/latest/release/versions.html",
+        "https://rocm.docs.amd.com/en/docs-7.0.1/about/release-notes.html",
+        "https://rocm.docs.amd.com/en/latest/how-to/system-debugging.html",
+        "https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html"
         ]
 
     
@@ -440,7 +449,7 @@ def create_enhanced_interface():
                 <div class="header-gradient" style="position: relative;">
                     <img src="https://upload.wikimedia.org/wikipedia/commons/7/7c/AMD_Logo.svg" alt="AMD Logo" style="position: absolute; top: 20px; right: 25px; height: 40px; width: auto;" />
                     <div style="padding-right: 120px;">
-                        <h1> AMD ROCm Multi-Model RAG Assistant Demo</h1>
+                        <h1> AMD ROCm Multi LLMS RAG Assistant Demo</h1>
                         <p>Powered by AMD Instinct MI300X • 192GB HBM3 • ROCm Platform</p>
                         <p><strong>Multi-Model Performance Dashboard & Comparative Analysis</strong></p>
                     </div>
@@ -663,7 +672,7 @@ if __name__ == "__main__":
         interface.launch(
             share=False,
             server_name="0.0.0.0",
-            server_port=7862,
+            server_port=7863,
             show_error=True,
             favicon_path=None
         )
