@@ -1,0 +1,146 @@
+.section {
+  max-width: 1100px;
+  margin: 0 auto var(--space-lg);
+  padding: 0 var(--space-xl);
+  position: relative;
+  z-index: 1;
+}
+
+.card {
+  background: var(--amd-bg-card);
+  border: 1px solid var(--amd-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.tabBar {
+  display: flex;
+  position: relative;
+  border-bottom: 1px solid var(--amd-border);
+}
+
+.tab {
+  flex: 1;
+  padding: var(--space-md) var(--space-sm);
+  background: transparent;
+  border: none;
+  color: var(--amd-muted);
+  font-family: var(--font-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: color 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.tabActive {
+  color: var(--amd-teal);
+  font-weight: var(--fw-semibold);
+}
+
+.tabIndicator {
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  background: var(--amd-teal);
+  border-radius: 2px 2px 0 0;
+  transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-teal);
+}
+
+.content {
+  padding: var(--space-xl);
+}
+
+.responseBlock {
+  margin-bottom: var(--space-lg);
+}
+
+.responseLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--amd-muted);
+  margin-bottom: var(--space-sm);
+}
+
+.responseText {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-primary);
+  font-size: var(--text-base);
+  color: var(--amd-white);
+  line-height: 1.7;
+  background: var(--amd-bg-input);
+  border: 1px solid var(--amd-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.metricsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.metricChip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--amd-bg-input);
+  border: 1px solid var(--amd-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  min-width: 80px;
+}
+
+.metricValue {
+  font-size: var(--text-base);
+  font-weight: var(--fw-semibold);
+  color: var(--amd-teal);
+}
+
+.metricLabel {
+  font-size: var(--text-xs);
+  color: var(--amd-muted);
+}
+
+.error {
+  background: var(--amd-bg-card);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-xl);
+  padding: var(--space-xl);
+  text-align: center;
+}
+
+.errorTitle {
+  font-size: var(--text-lg);
+  font-weight: var(--fw-semibold);
+  color: #ef4444;
+  margin-bottom: var(--space-sm);
+}
+
+.errorMsg {
+  color: var(--amd-muted);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.errorHint {
+  font-size: var(--text-sm);
+  color: var(--amd-muted);
+}
+
+.errorHint code {
+  color: var(--amd-teal);
+  background: var(--amd-bg-input);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}

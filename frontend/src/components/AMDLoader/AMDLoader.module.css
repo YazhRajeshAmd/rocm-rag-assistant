@@ -1,0 +1,31 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-2xl) var(--space-xl);
+}
+
+.spinner {
+  display: block;
+}
+
+.label {
+  font-size: var(--text-sm);
+  color: var(--amd-muted);
+  font-weight: var(--fw-medium);
+}
+
+.dots {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amd-teal);
+  animation: dotBounce 1.2s ease-in-out infinite;
+}

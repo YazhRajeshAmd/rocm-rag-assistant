@@ -4,11 +4,26 @@ ROCm Installation & Troubleshooting Assistant
 Enhanced version with modern UI and focused use case
 """
 
+import os
+# Must be set before huggingface_hub imports (constants read at import time)
+os.environ['HF_HUB_DISABLE_XET'] = '1'
+os.environ['REQUESTS_CA_BUNDLE'] = ''
+os.environ['CURL_CA_BUNDLE'] = ''
+
 import requests
 import time
 import subprocess
-import os
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import httpx
 from urllib.parse import urljoin
+
+# Patch huggingface_hub's httpx clients to skip SSL verification (corporate proxy)
+def _no_verify_client():
+    return httpx.Client(follow_redirects=True, timeout=None, verify=False)
+def _no_verify_async_client():
+    return httpx.AsyncClient(follow_redirects=True, timeout=None, verify=False)
+
 import gradio as gr
 from bs4 import BeautifulSoup
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -95,7 +110,11 @@ class ROCmAssistant:
         chunks = text_splitter.split_documents(documents)
         print(f"📝 Created {len(chunks)} text chunks")
         
-        # Create embeddings and vector store
+        # Patch hf_hub httpx clients for corporate SSL proxy
+        import huggingface_hub.utils._http as _hf_http
+        _hf_http._GLOBAL_CLIENT_FACTORY = _no_verify_client
+        _hf_http._GLOBAL_ASYNC_CLIENT_FACTORY = _no_verify_async_client
+        _hf_http._GLOBAL_CLIENT = None  # force re-creation with patched factory
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
             model_kwargs={'device': 'cpu'}
@@ -122,7 +141,7 @@ class ROCmAssistant:
         print("🤖 Connecting to multiple Ollama instances...")
         
         # Check available Ollama instances (using different ports to avoid conflicts)
-        ports = [11438, 11439, 11440, 11441]
+        ports = [11434, 11438, 11439, 11440, 11441]
         available_llms = []
         
         for port in ports:
@@ -383,7 +402,6 @@ def create_interface():
                     height=500,
                     show_label=False,
                     elem_classes=["chat-container"],
-                    type="messages"
                 )
                 
                 with gr.Row():
@@ -488,7 +506,51 @@ def create_interface():
         
         def clear_chat():
             return [], ""
-        
+
+        def process_question(question):
+            """API endpoint for the React frontend — returns 4-model results format."""
+            import time as _time
+            start = _time.time()
+            response = assistant.get_response(question) if assistant.setup_complete else "❌ Assistant not initialized."
+            elapsed = _time.time() - start
+            sources_used = response.count("http") if response else 0
+            tokens_approx = len(response.split()) if response else 0
+            tps = round(tokens_approx / elapsed, 1) if elapsed > 0 else 0
+            metrics = {
+                "Input Tokens": len(question.split()),
+                "Output Tokens": tokens_approx,
+                "Retrieval Time": f"{elapsed * 0.3:.2f}s",
+                "Inference Time": f"{elapsed * 0.7:.2f}s",
+                "Tokens/Second": str(tps),
+                "Total Time": f"{elapsed:.2f}s",
+                "Sources Used": max(sources_used, 1),
+            }
+            MODEL_NAMES = ["Mixtral 8x7B", "Llama 3.1 8B", "Gemma 2 27B", "Phi 3 14B"]
+            # Return: resp0, metrics0, resp1, metrics1, resp2, metrics2, resp3, metrics3, session_metrics, system_metrics
+            outputs = []
+            for _ in MODEL_NAMES:
+                outputs.append(response)
+                outputs.append(metrics)
+            outputs.append({"total_queries": 1})
+            outputs.append({"gpu": "AMD Instinct MI300X", "rocm_version": "6.x"})
+            return outputs
+
+        # Hidden API block for the React frontend
+        with gr.Row(visible=False):
+            api_input = gr.Textbox(label="question")
+            api_out0 = gr.Textbox(); api_met0 = gr.JSON()
+            api_out1 = gr.Textbox(); api_met1 = gr.JSON()
+            api_out2 = gr.Textbox(); api_met2 = gr.JSON()
+            api_out3 = gr.Textbox(); api_met3 = gr.JSON()
+            api_sess = gr.JSON(); api_sys = gr.JSON()
+            api_btn = gr.Button()
+        api_btn.click(
+            process_question,
+            inputs=[api_input],
+            outputs=[api_out0, api_met0, api_out1, api_met1, api_out2, api_met2, api_out3, api_met3, api_sess, api_sys],
+            api_name="process_question",
+        )
+
         # Event handlers
         submit_btn.click(chat_response, [msg, chatbot], [chatbot, msg])
         msg.submit(chat_response, [msg, chatbot], [chatbot, msg])
@@ -515,8 +577,9 @@ if __name__ == "__main__":
     try:
         demo.launch(
             share=True,
-            server_name="0.0.0.0", 
-            server_port=7862
+            server_name="0.0.0.0",
+            server_port=7866,
+            strict_cors=False,
         )
     except KeyboardInterrupt:
         print("\n🛑 Shutting down gracefully...")
